@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Starlight Infiltration</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #090a0f;
+      color: #c0d0e0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    header {
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    h1 {
+      font-size: 22px;
+      letter-spacing: 2px;
+      color: #00ffcc;
+      text-shadow: 0 0 10px rgba(0,255,204,0.4);
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      font-size: 12px;
+      color: #708090;
+      letter-spacing: 1px;
+    }
+    #game-container {
+      position: relative;
+      box-shadow: 0 0 30px rgba(0, 255, 204, 0.15), inset 0 0 20px rgba(0,0,0,0.8);
+      border: 2px solid #1a2636;
+      border-radius: 6px;
+      background: #050608;
+    }
+    canvas {
+      display: block;
+      background: #0b0e14;
+    }
+    #hud {
+      width: 960px;
+      background: #11151d;
+      border: 2px solid #1a2636;
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+    .hud-group {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .hud-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .hud-label {
+      font-size: 10px;
+      color: #708090;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .hud-value {
+      font-weight: bold;
+      color: #e0e6ed;
+    }
+    #alarm-bar-container {
+      width: 140px;
+      height: 12px;
+      background: #1a2230;
+      border-radius: 3px;
+      overflow: hidden;
+      border: 1px solid #2a3a50;
+      position: relative;
+    }
+    #alarm-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #00ffcc, #ffcc00, #ff3344);
+      transition: width 0.05s linear;
+    }
+    button {
+      background: #162232;
+      color: #00ffcc;
+      border: 1px solid #00ffcc;
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      transition: all 0.2s;
+    }
+    button:hover {
+      background: #00ffcc;
+      color: #0b0e14;
+      box-shadow: 0 0 10px rgba(0,255,204,0.5);
+    }
+    #instructions {
+      margin-top: 10px;
+      font-size: 11px;
+      color: #607080;
+      text-align: center;
+      max-width: 960px;
+      line-height: 1.4;
+    }
+    #instructions span {
+      color: #90a0b0;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>STARLIGHT INFILTRATION</h1>
+    <div class="subtitle">STEALTH PROTOCOL // STAR-VAULT FACILITY</div>
+  </header>
+
+  <div id="game-container">
+    <canvas id="canvas" width="960" height="600"></canvas>
+  </div>
+
+  <div id="hud">
+    <div class="hud-group">
+      <div class="hud-item">
+        <span class="hud-label">Alarm Meter</span>
+        <div id="alarm-bar-container"><div id="alarm-bar-fill"></div></div>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Data Shards</span>
+        <span class="hud-value" id="val-shards">0 / 3</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Star Core</span>
+        <span class="hud-value" id="val-core" style="color: #ff3399;">Missing</span>
+      </div>
+    </div>
+    <div class="hud-group">
+      <div class="hud-item">
+        <span class="hud-label">Escape Timer</span>
+        <span class="hud-value" id="val-timer">00.00s</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Times Caught</span>
+        <span class="hud-value" id="val-caught" style="color: #ff5555;">0</span>
+      </div>
+      <button id="btn-restart">RESTART (R)</button>
+    </div>
+  </div>
+
+  <div id="instructions">
+    <span>WASD / Arrows</span> to Move &nbsp;|&nbsp; <span>Hold Shift</span> to Sneak (52% speed, smaller guard vision range) &nbsp;|&nbsp; <span>R</span> to Restart &nbsp;|&nbsp; Evade guard vision cones &nbsp;|&nbsp; Steal Star Core &nbsp;|&nbsp; Reach Exit Gate
+  </div>
+
+<script>
+// --- AUDIO SYSTEM (WebAudio) ---
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+}
+
+function playTone(freq, type, duration, vol = 0.15) {
+  try {
+    initAudio();
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  } catch (e) {}
+}
+
+const sounds = {
+  pickup: () => playTone(1320, 'sine', 0.25, 0.2),
+  shard: () => playTone(990, 'triangle', 0.2, 0.15),
+  tick: () => playTone(1760, 'sine', 0.05, 0.08),
+  caught: () => playTone(160, 'sawtooth', 0.6, 0.25),
+  win: () => {
+    playTone(1174.66, 'sine', 0.2, 0.2);
+    setTimeout(() => playTone(1318.51, 'sine', 0.2, 0.2), 150);
+    setTimeout(() => playTone(1567.98, 'sine', 0.4, 0.25), 300);
+  }
+};
+
+// --- GAME CONFIG & STATE ---
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const CONFIG = {
+  width: 960,
+  height: 600,
+  normalSpeed: 3.2,
+  sneakSpeed: 1.66, // ~52% of 3.2
+  normalVisionRange: 152,
+  sneakVisionRange: 118,
+  visionAngle: 71 * Math.PI / 180, // 71 degrees
+};
+
+let keys = {};
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'KeyR') {
+    resetGame(true);
+  }
+  if (['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight'].includes(e.code)) {
+    initAudio();
+  }
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+document.getElementById('btn-restart').addEventListener('click', () => {
+  resetGame(true);
+});
+
+// --- MAP & OBSTACLES ---
+// Walls and crates (rectangles: x, y, w, h)
+const obstacles = [
+  // Outer boundary walls
+  { x: 0, y: 0, w: 960, h: 20 },
+  { x: 0, y: 580, w: 960, h: 20 },
+  { x: 0, y: 0, w: 20, h: 600 },
+  { x: 940, y: 0, w: 20, h: 600 },
+
+  // Internal Vault Walls & Crates
+  // Top-Left Crate cluster
+  { x: 180, y: 100, w: 100, h: 90 },
+  { x: 340, y: 100, w: 60, h: 90 },
+
+  // Top-Right Crate cluster
+  { x: 520, y: 100, w: 60, h: 90 },
+  { x: 680, y: 100, w: 100, h: 90 },
+
+  // Center Vault (around Star Core)
+  { x: 420, y: 220, w: 120, h: 40 },
+  { x: 420, y: 340, w: 120, h: 40 },
+
+  // Bottom-Left Crate cluster
+  { x: 180, y: 410, w: 100, h: 90 },
+  { x: 340, y: 410, w: 60, h: 90 },
+
+  // Bottom-Right Crate cluster
+  { x: 520, y: 410, w: 60, h: 90 },
+  { x: 680, y: 410, w: 100, h: 90 },
+];
+
+// Exit Gate (right edge, active when Star Core collected)
+const exitGate = { x: 940, y: 240, w: 20, h: 120 };
+
+// Start Pad (bottom-left)
+const startPad = { x: 50, y: 500, w: 70, h: 60 };
+
+// Shards (3 optional golden data shards in guarded corners)
+let shards = [
+  { x: 100, y: 80, collected: false, radius: 10 },
+  { x: 860, y: 80, collected: false, radius: 10 },
+  { x: 860, y: 520, collected: false, radius: 10 },
+];
+
+// Star Core at centre
+let starCore = { x: 480, y: 300, collected: false, radius: 18, angle: 0 };
+
+// Player
+let player = {
+  x: 85,
+  y: 530,
+  radius: 12,
+  vx: 0,
+  vy: 0
+};
+
+// Guards (4 guards on rectangular patrol loops)
+let guards = [
+  {
+    x: 150, y: 120,
+    waypoints: [{x:150, y:60}, {x:420, y:60}, {x:420, y:180}, {x:150, y:180}],
+    wpIndex: 0,
+    speed: 1.4,
+    angle: 0,
+    pauseTimer: 0
+  },
+  {
+    x: 810, y: 120,
+    waypoints: [{x:810, y:60}, {x:540, y:60}, {x:540, y:180}, {x:810, y:180}],
+    wpIndex: 0,
+    speed: 1.6,
+    angle: 0,
+    pauseTimer: 0
+  },
+  {
+    x: 150, y: 480,
+    waypoints: [{x:150, y:420}, {x:420, y:420}, {x:420, y:540}, {x:150, y:540}],
+    wpIndex: 0,
+    speed: 1.5,
+    angle: 0,
+    pauseTimer: 0
+  },
+  {
+    x: 810, y: 480,
+    waypoints: [{x:810, y:420}, {x:540, y:420}, {x:540, y:540}, {x:810, y:540}],
+    wpIndex: 0,
+    speed: 1.3,
+    angle: 0,
+    pauseTimer: 0
+  }
+];
+
+// Game State Metrics
+let alarmMeter = 0; // 0 to 100
+let shardsCollected = 0;
+let coreAcquired = false;
+let timesCaught = 0;
+let gameTime = 0;
+let gameWon = false;
+let gameStarted = false;
+let lastTickTime = 0;
+let warningTickTimer = 0;
+
+function resetGame(fullReset = false) {
+  player.x = 85;
+  player.y = 530;
+  alarmMeter = 0;
+  if (fullReset) {
+    shards.forEach(s => s.collected = false);
+    shardsCollected = 0;
+    starCore.collected = false;
+    coreAcquired = false;
+    timesCaught = 0;
+    gameTime = 0;
+    gameWon = false;
+    gameStarted = false;
+  }
+}
+
+// --- COLLISION DETECTION ---
+function circleRectCollide(cx, cy, cr, rx, ry, rw, rh) {
+  let closestX = Math.max(rx, Math.min(cx, rx + rw));
+  let closestY = Math.max(ry, Math.min(cy, ry + rh));
+  let distX = cx - closestX;
+  let distY = cy - closestY;
+  let distance = Math.sqrt(distX * distX + distY * distY);
+  return distance < cr;
+}
+
+// Line segment vs Rectangle intersection for Line of Sight blocking
+function lineRectIntersect(x1, y1, x2, y2, rx, ry, rw, rh) {
+  // Check intersection with 4 sides of rect
+  return (
+    lineLineIntersect(x1, y1, x2, y2, rx, ry, rx + rw, ry) ||
+    lineLineIntersect(x1, y1, x2, y2, rx + rw, ry, rx + rw, ry + rh) ||
+    lineLineIntersect(x1, y1, x2, y2, rx + rw, ry + rh, rx, ry + rh) ||
+    lineLineIntersect(x1, y1, x2, y2, rx, ry + rh, rx, ry)
+  );
+}
+
+function lineLineIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+  let denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+  if (denom === 0) return false;
+  let ua =rogueVal((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3), denom);
+  let ub =rogueVal((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3), denom);
+  return ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1;
+}
+
+function rogueVal(num, denom) {
+  return num / denom;
+}
+
+// Check if there is clear line of sight between (x1, y1) and (x2, y2)
+function hasLineOfSight(x1, y1, x2, y2) {
+  for (let obs of obstacles) {
+    if (lineRectIntersect(x1, y1, x2, y2, obs.x, obs.y, obs.w, obs.h)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Get closest obstacle intersection point along a ray for vision cone clipping
+flotRayIntersection(ox, oy, angle, maxDist) {
+  let closestDist = maxDist;
+  let endX = ox + Math.cos(angle) * maxDist;
+  let endY = oy + Math.sin(angle) * maxDist;
+
+  for (let obs of obstacles) {
+    // Test ray against 4 segments of obs
+    let segments = [
+      [obs.x, obs.y, obs.x + obs.w, obs.y],
+      [obs.x + obs.w, obs.y, obs.x + obs.w, obs.y + obs.h],
+      [obs.x + obs.w, obs.y + obs.h, obs.x, obs.y + obs.h],
+      [obs.x, obs.y + obs.h, obs.x, obs.y]
+    ];
+    for (let seg of segments) {
+      let hit = raySegmentIntersect(ox, oy, endX, endY, seg[0], seg[1], seg[2], seg[3]);
+      if (hit && hit.dist < closestDist) {
+        closestDist = hit.dist;
+      }
+    }
+  }
+  return {
+    x: ox + Math.cos(angle) * closestDist,
+    y: oy + Math.sin(angle) * closestDist,
+    dist: closestDist
+  };
+}
+
+function raySegmentIntersect(x1, y1, x2, y2, x3, y3, x4, y4) {
+  let denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+  if (denom === 0) return null;
+  let ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+  let ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+  if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+    let ix = x1 + ua * (x2 - x1);
+    let iy = y1 + ua * (y2 - y1);
+    let dist = Math.hypot(ix - x1, iy - y1);
+    return { x: ix, y: iy, dist: dist };
+  }
+  return null;
+}
+
+// --- UPDATE LOOP ---
+let lastTime = performance.now();
+
+function update(timestamp) {
+  let dt = (timestamp - lastTime) / 1000;
+  if (dt > 0.1) dt = 0.1;
+  lastTime = timestamp;
+
+  if (!gameWon) {
+    gameTime += dt;
+  }
+
+  // Player Movement
+  let isSneaking = keys['ShiftLeft'] || keys['ShiftRight'];
+  let currentSpeed = isSneaking ? CONFIG.sneakSpeed : CONFIG.normalSpeed;
+
+  let dx = 0, dy = 0;
+  if (keys['KeyW'] || keys['ArrowUp']) dy -= 1;
+  if (keys['KeyS'] || keys['ArrowDown']) dy += 1;
+  if (keys['KeyA'] || keys['ArrowLeft']) dx -= 1;
+  if (keys['KeyD'] || keys['ArrowRight']) dx += 1;
+
+  if (dx !== 0 && dy !== 0) {
+    dx *= 0.7071;
+    dy *= 0.7071;
+  }
+
+  if (dx !== 0 || dy !== 0) {
+    if (!gameStarted) gameStarted = true;
+  }
+
+  // X movement and collision
+  player.x += dx * currentSpeed;
+  for (let obs of obstacles) {
+    if (circleRectCollide(player.x, player.y, player.radius, obs.x, obs.y, obs.w, obs.h)) {
+      if (dx > 0) player.x = obs.x - player.radius;
+      else if (dx < 0) player.x = obs.x + obs.w + player.radius;
+    }
+  }
+
+  // Y movement and collision
+  player.y += dy * currentSpeed;
+  for (let obs of obstacles) {
+    if (circleRectCollide(player.x, player.y, player.radius, obs.x, obs.y, obs.w, obs.h)) {
+      if (dy > 0) player.y = obs.y - player.radius;
+      else if (dy < 0) player.y = obs.y + obs.h + player.radius;
+    }
+  }
+
+  // Clamp player to canvas bounds
+  player.x = Math.max(player.radius + 20, Math.min(CONFIG.width - player.radius - 20, player.x));
+  player.y = Math.max(player.radius + 20, Math.min(CONFIG.height - player.radius - 20, player.y));
+
+  // Update Guards
+  for (let g of guards) {
+    if (g.pauseTimer > 0) {
+      g.pauseTimer -= dt;
+      continue;
+    }
+    let target = g.waypoints[g.wpIndex];
+    let gdx = target.x - g.x;
+    let gdy = target.y - g.y;
+    let dist = Math.hypot(gdx, gdy);
+
+    if (dist < g.speed) {
+      g.x = target.x;
+      g.y = target.y;
+      g.wpIndex = (g.wpIndex + 1) % g.waypoints.length;
+      g.pauseTimer = 1.0; // 1 second pause at corners
+    } else {
+      g.angle = Math.atan2(gdy, gdx);
+      g.x += (gdx / dist) * g.speed;
+      g.y += (gdy / dist) * g.speed;
+    }
+  }
+
+  // Check Shards Collection
+  for (let s of shards) {
+    if (!s.collected) {
+      let dist = Math.hypot(player.x - s.x, player.y - s.y);
+      if (dist < player.radius + s.radius) {
+        s.collected = true;
+        shardsCollected++;
+        sounds.shard();
+      }
+    }
+  }
+
+  // Check Star Core Collection
+  if (!starCore.collected) {
+    let dist = Math.hypot(player.x - starCore.x, player.y - starCore.y);
+    if (dist < player.radius + starCore.radius) {
+      starCore.collected = true;
+      coreAcquired = true;
+      sounds.pickup();
+    }
+  }
+
+  // Check Exit Gate Win
+  if (coreAcquired && !gameWon) {
+    if (
+      player.x + player.radius >= exitGate.x &&
+      player.y >= exitGate.y &&
+      player.y <= exitGate.y + exitGate.h
+    ) {
+      gameWon = true;
+      sounds.win();
+    }
+  }
+
+  // Vision Cone Detection & Alarm Meter
+  let visionRange = isSneaking ? CONFIG.sneakVisionRange : CONFIG.normalVisionRange;
+  let playerDetected = false;
+
+  for (let g of guards) {
+    let pDist = Math.hypot(player.x - g.x, player.y - g.y);
+    if (pDist <= visionRange) {
+      let angleToPlayer = Math.atan2(player.y - g.y, player.x - g.x);
+      let angleDiff = Math.abs(Math.atan2(Math.sin(angleToPlayer - g.angle), Math.cos(angleToPlayer - g.angle)));
+      if (angleDiff <= CONFIG.visionAngle / 2) {
+        // Check Line of sight blocking by obstacles
+        if (hasLineOfSight(g.x, g.y, player.x, player.y)) {
+          playerDetected = true;
+          // Fill faster when closer
+          let proximityFactor = 1 + (1 - pDist / visionRange) * 1.5;
+          alarmMeter += 45 * dt * proximityFactor;
+        }
+      }
+    }
+  }
+
+  if (playerDetected) {
+    warningTickTimer += dt;
+    if (warningTickTimer > 0.25) {
+      warningTickTimer = 0;
+      sounds.tick();
+    }
+  } else {
+    // Decay alarm meter
+    alarmMeter -= 25 * dt;
+  }
+  alarmMeter = Math.max(0, Math.min(100, alarmMeter));
+
+  if (alarmMeter >= 100) {
+    // Caught!
+    timesCaught++;
+    sounds.caught();
+    alarmMeter = 0;
+    resetGame(false);
+  }
+
+  // Update HUD DOM
+  document.getElementById('alarm-bar-fill').style.width = alarmMeter + '%';
+  document.getElementById('val-shards').innerText = shardsCollected + ' / 3';
+  const coreEl = document.getElementById('val-core');
+  if (coreAcquired) {
+    coreEl.innerText = 'SECURED';
+    coreEl.style.color = '#00ffcc';
+  } else {
+    coreEl.innerText = 'Missing';
+    coreEl.style.color = '#ff3399';
+  }
+  document.getElementById('val-timer').innerText = gameTime.toFixed(2) + 's';
+  document.getElementById('val-caught').innerText = timesCaught;
+}
+
+// --- RENDER LOOP ---
+function render() {
+  ctx.clearRect(0, 0, CONFIG.width, CONFIG.height);
+
+  // 1. Floor Grid & Star Vault aesthetic
+  ctx.strokeStyle = '#121824';
+  ctx.lineWidth = 1;
+  for (let x = 0; x < CONFIG.width; x += 40) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CONFIG.height); ctx.stroke();
+  }
+  for (let y = 0; y < CONFIG.height; y += 40) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CONFIG.width, y); ctx.stroke();
+  }
+
+  // Subtle star dots in floor
+  ctx.fillStyle = '#1e2838';
+  for (let i = 0; i < 40; i++) {
+    let px = (i * 137) % CONFIG.width;
+    let py = (i * 211) % CONFIG.height;
+    ctx.fillRect(px, py, 2, 2);
+  }
+
+  // 2. Start Pad
+  ctx.fillStyle = 'rgba(0, 255, 204, 0.08)';
+  ctx.fillRect(startPad.x, startPad.y, startPad.w, startPad.h);
+  ctx.strokeStyle = 'rgba(0, 255, 204, 0.3)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 4]);
+  ctx.strokeRect(startPad.x, startPad.y, startPad.w, startPad.h);
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#00ffcc';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('START', startPad.x + startPad.w/2, startPad.y + startPad.h/2 + 3);
+
+  // 3. Exit Gate
+  ctx.fillStyle = coreAcquired ? 'rgba(0, 255, 100, 0.25)' : 'rgba(100, 100, 100, 0.1)';
+  ctx.fillRect(exitGate.x, exitGate.y, exitGate.w, exitGate.h);
+  ctx.strokeStyle = coreAcquired ? '#00ff66' : '#506070';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(exitGate.x, exitGate.y, exitGate.w, exitGate.h);
+  ctx.fillStyle = coreAcquired ? '#00ff66' : '#708090';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.save();
+  ctx.translate(exitGate.x + 10, exitGate.y + exitGate.h/2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.fillText(coreAcquired ? 'EXIT OPEN' : 'EXIT LOCKED', 0, 4);
+  ctx.restore();
+
+  // 4. Shards
+  for (let s of shards) {
+    if (!s.collected) {
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(gameTime * 3);
+      ctx.fillStyle = '#ffcc00';
+      ctx.shadowColor = '#ffcc00';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      for (let i = 0; i < 4; i++) {
+        ctx.lineTo(0, -12);
+        ctx.rotate(Math.PI / 4);
+        ctx.lineTo(0, -5);
+        ctx.rotate(Math.PI / 4);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // 5. Star Core
+  if (!starCore.collected) {
+    starCore.angle += 0.02;
+    ctx.save();
+    ctx.translate(starCore.x, starCore.y);
+    ctx.rotate(starCore.angle);
+    ctx.fillStyle = '#ff3399';
+    ctx.shadowColor = '#ff3399';
+    ctx.shadowBlur = 18;
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      ctx.lineTo(0, -20);
+      ctx.rotate(Math.PI / 5);
+      ctx.lineTo(0, -8);
+      ctx.rotate(Math.PI / 5);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 6. Obstacles (Walls & Crates)
+  for (let obs of obstacles) {
+    // Wall / Crate body
+    ctx.fillStyle = '#161d2b';
+    ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+    ctx.strokeStyle = '#2a3b55';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+
+    // Inner detail lines
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(obs.x + 4, obs.y + 4, obs.w - 8, obs.h - 8);
+  }
+
+  // 7. Guards & Vision Cones
+  let isSneaking = keys['ShiftLeft'] || keys['ShiftRight'];
+  let visionRange = isSneaking ? CONFIG.sneakVisionRange : CONFIG.normalVisionRange;
+
+  for (let g of guards) {
+    // Draw Vision Cone polygon with wall clipping
+    let startA = g.angle - CONFIG.visionAngle / 2;
+    let endA = g.angle + CONFIG.visionAngle / 2;
+    let rays = 24;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(g.x, g.y);
+    for (let i = 0; i <= rays; i++) {
+      let a = startA + (i / rays) * (endA - startA);
+      let hit = flotRayIntersection(g.x, g.y, a, visionRange);
+      ctx.lineTo(hit.x, hit.y);
+    }
+    ctx.closePath();
+
+    let grad = ctx.createRadialGradient(g.x, g.y, 10, g.x, g.y, visionRange);
+    grad.addColorStop(0, 'rgba(255, 170, 0, 0.35)');
+    grad.addColorStop(1, 'rgba(255, 68, 0, 0.02)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.restore();
+
+    // Guard Body
+    ctx.fillStyle = '#ff5555';
+    ctx.shadowColor = '#ff5555';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(g.x, g.y, 11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Guard facing line / visor
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(g.x, g.y);
+    ctx.lineTo(g.x + Math.cos(g.angle) * 15, g.y + Math.sin(g.angle) * 15);
+    ctx.stroke();
+  }
+
+  // 8. Player
+  ctx.fillStyle = isSneaking ? '#00cc99' : '#00ffcc';
+  ctx.shadowColor = '#00ffcc';
+  ctx.shadowBlur = isSneaking ? 6 : 12;
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Player center dot / core
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Sneak aura ring
+  if (isSneaking) {
+    ctx.strokeStyle = 'rgba(0, 255, 204, 0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.radius + 5, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // 9. Win Banner Overlay
+  if (gameWon) {
+    ctx.fillStyle = 'rgba(5, 6, 8, 0.85)';
+    ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
+
+    ctx.fillStyle = '#00ffcc';
+    ctx.font = 'bold 36px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#00ffcc';
+    ctx.shadowBlur = 20;
+    ctx.fillText('MISSION ACCOMPLISHED', CONFIG.width / 2, CONFIG.height / 2 - 50);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = '#c0d0e0';
+    ctx.font = '16px sans-serif';
+    ctx.fillText(`Escape Time: ${gameTime.toFixed(2)}s`, CONFIG.width / 2, CONFIG.height / 2 - 5);
+    ctx.fillText(`Data Shards Collected: ${shardsCollected} / 3`, CONFIG.width / 2, CONFIG.height / 2 + 25);
+    ctx.fillText(`Times Caught: ${timesCaught}`, CONFIG.width / 2, CONFIG.height / 2 + 55);
+
+    ctx.fillStyle = '#ffcc00';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('Press R or Restart to Play Again', CONFIG.width / 2, CONFIG.height / 2 + 105);
+  }
+}
+
+// Helper function name alias
+function flotRayIntersection(ox, oy, angle, maxDist) {
+  return rayIntersection(ox, oy, angle, maxDist);
+}
+
+function rayIntersection(ox, oy, angle, maxDist) {
+  let closestDist = maxDist;
+  let endX = ox + Math.cos(angle) * maxDist;
+  let endY = oy + Math.sin(angle) * maxDist;
+
+  for (let obs of obstacles) {
+    let segments = [
+      [obs.x, obs.y, obs.x + obs.w, obs.y],
+      [obs.x + obs.w, obs.y, obs.x + obs.w, obs.y + obs.h],
+      [obs.x + obs.w, obs.y + obs.h, obs.x, obs.y + obs.h],
+      [obs.x, obs.y + obs.h, obs.x, obs.y]
+    ];
+    for (let seg of segments) {
+      let hit = raySegmentIntersect(ox, oy, endX, endY, seg[0], seg[1], seg[2], seg[3]);
+      if (hit && hit.dist < closestDist) {
+        closestDist = hit.dist;
+      }
+    }
+  }
+  return {
+    x: ox + Math.cos(angle) * closestDist,
+    y: oy + Math.sin(angle) * closestDist,
+    dist: closestDist
+  };
+}
+
+// --- MAIN GAME LOOP ---
+function loop(timestamp) {
+  update(timestamp);
+  render();
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
