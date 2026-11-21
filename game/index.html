@@ -394,7 +394,7 @@ function hasLineOfSight(x1, y1, x2, y2) {
 }
 
 // Get closest obstacle intersection point along a ray for vision cone clipping
-flotRayIntersection(ox, oy, angle, maxDist) {
+function flotRayIntersection(ox, oy, angle, maxDist) {
   let closestDist = maxDist;
   let endX = ox + Math.cos(angle) * maxDist;
   let endY = oy + Math.sin(angle) * maxDist;
